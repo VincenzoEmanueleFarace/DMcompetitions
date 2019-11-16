@@ -1,0 +1,383 @@
+---
+title: "MISS CONGENIALITY"
+
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+TEAM NAME: Double_Name  
+TEAM MEMBERS: Farace Vincenzo Emanuele (v.farace), Viganò Lorenzo (l.viganò), Silva alessandro (a.silva)  
+
+## Online Dating  
+L'obiettivo è quello di prevedere il rating (da 1 a 5 stelle) che 2931 utenti di Netflix attribuiranno al film Miss Congeniality (film proiettato sui maxi schermi per la prima volta nel 2000). Il criterio di comparazione e scelta del modello ottimale è il RMSE. Il training dataset contiene 10000 osservazioni, di cui, relativamente al film che intesessa prevedere: il 2.13% ha dato un punteggio pari a 1, l' 8.65% ha attribuito un punteggio di 2, il 33.78% ha dato un punteggio pari a 3 stelle, il 36.48% ha sottomesso un rating di 4 stelle e, infine, il 18.96% ha votato 5.  
+  
+Il dataset contiene:  
+    - 99 predittori, di tipo integer, ciascuno dei quali specifica il voto, da 1 a 5, che ogni utente ha attribuito a quello specifico film  
+    - 99 predittori, di tipo integer, i quali si riferiscono alla distanza trascorsa tra il commento di ciascun film, da parte dell'utente, e la data 01-01-1997  
+    - 1 predittore, di tipo integer, che indica la distanza tra il commento del film Miss Congeniality, da parte di ciascun utente, e la data 01-01-1997  
+  
+Sono presenti informazioni esterne ai dati quali: i 99 titoli dei film, per ciascuno dei quali è specificato l'anno di uscita.  
+
+Per prevedere i ratings, pur trattandosi di una variabile su scala ordinale, visto il metro di valutazione, abbiamo optato per l'utilizzo di modelli di regressione.   
+  
+Per la previsione finale si è deciso di utilizzare un modello LASSO, in quanto, all'aumentare dei predittori, tende a dare un maggior peso a quelli che effettivamente sono rilevanti. In particolar modo, per stabilizzare la previsione finale sul test set, si è optato per la media delle previsioni di una K-FOLD CROSS VALIDATION con K=5 folds.  
+  
+*Summary of the modelling process:*  
+  
+  1. *Preprocessing*  
+      Studio della  distribuzione dei ratings per ogni variabile e per ogni utente, con lo scopo di identificare degli aspetti in comune. 
+    
+  2. *Missing Values*  
+        Soltanto le prime 14 variabili, sia per le date che per i ratings, non contengono missing values. Tali missing sono codificati con *0* nei ratings e *000* nelle date.  Pur essendo gli *NA* ampiamente informativi, per ciascuna variabile annessa ai ratings si è sfruttato un *linear model* con lo scopo di imputarli. Nello specifico si è pensato di sfruttare, per ciascun film, i restanti 98 come predittori, mantenendo gli *NA* con la loro originale codifica.  
+  3. *Feature engineering*  
+      Con lo scopo di ottimizzare il modello, si è pensato di creare le seguenti matrici/variabili:  
+      + *dummy_missing_combi*: si tratta di una variabile che, relativamente ai film *Lost in Translation*,*The Royal Tenenbaums* e *Napoleon Dynamite*, i quali hano tutti una media inferiore a 3.23, codifica come 1 se ogni utente non ha commentato nessuno dei tre film, 0 altrimenti.  
+      + *dummy_1_bassi*: sempre per i 3 film citati in precedenza, questa dummy codifica come 1 l'utente che ha messo rating 1 a tutti e tre, 0 altrimenti.  
+      + *media_voti_bassi*: per i tre film citati in precedenza, calcola la media dei voti di ciascun utente (senza i missing).  
+      + *num_voti.bassi.min3*: per i tre film, conta quanti dei 3 film ogni utente ha votato.  
+      + *media_users*: è la media dei ratings di ciascun utente (senza i missing).  
+      + *sd_users*: è la deviazione standard dei ratings di ciascun utente (senza i missing).  
+      + *train/test.count.users*: per ciascun utente conta quanti film ha recensito.  
+      + *dummy_matrix*: è una matrice di 85 colonne, ciascuna delel quali associata alle variabili dei ratings che presentano missing values. Tutti i missing sono codificati con 1, viceversa i voti con 0.  
+      + *min.users*: per ciascun utente indica il minimo rating.  
+      + *max.users*: per ciascun utente indica il massimo rating.  
+      + *train/test.film.unici.votati*: per ciascun utente conta quanti film sono stati votati.  
+      + *num.voti.singolo_film*: per ciascun utente conta quante volte ha recensito un solo film in un giorno.  
+      + *train/test.diff.min.commento.da.MC*: per ciascun utente riporta la differenza tra il giorno in cui ha votato Miss Congeniality e il giorno in cui ha votato per la prima volta uno o più film (per comodità si è lasciata la codifica iniziale delle date).  
+      + *max.date*: variabile che, per ciascun utente, riporta l'ultimo giorno in cui egli ha votato (in termini di distanza dal giorno 01-01-1997).  
+      + *matrix.dist.date.commento*: matrice di 99 colonne. Per ciascun utente si riporta la differenza tra il giorno in cui ha votato Miss Congeniality e il giorno in cui ha recensito ciascun film (per i missing values si è scelto di mettere 0).  
+      + *num_voti_day_mc*: variabile che, per ciascun utente, conta quanti altri film sono stati votati lo stesso giorno di Miss Congeniality.  
+      + *media_voti_day_mc*: media dei voti, per ciascuna riga, dei ratings messi nello stesso giorno di Miss Congeniality (là dove non vi era nessun commento, si è messo valore 0).  
+      + *voto1*: numero di volte che l'utente ha messo 1 nello stesso giorno incui ha commentato Miss Congeniality.  
+      + *voto2*: numero di volte che l'utente ha messo 2 nello stesso giorno incui ha commentato Miss Congeniality.
+      + *sd_voti_day_mc*: deviazione standard dei ratings, per riga, relativamente ai film recensiti nello stesso giorno della y.  
+      + *sdi*: per ciascun utente è il rapporto tra la media e la varianza dei ratings messi nello stesso giorno in cui è stato recensito Miss Congeniality.  
+      + *matrice.pesi*: matrice di 99 colonne in cui sono riportati i pesi per i voti messi nello stesso giorno in cui l'utente ha votato Miss Congeniality.  
+      + *dummy_same_day_good*: dummy che, per ciascun utente, codifica come 1 coloro i quali hanno messo dei voti che, nello stesso giorno di Miss Congeniality, mediamente, sono superiori alla media delle recensioni degli stessi.  
+      + *matrice.pesi.month*: matrice di 99 colonne in cui sono riportati i pesi per i voti messi nel mese antecedente al giorno in cui l'utente ha votato Miss Congeniality.  
+      
+    
+  4. *Feature selection*  
+      Per selezionare le variabili, non funzionando né gli algoritmi di selezione, poiché il dataset troppo pesante, né i metodi standard, abbiamo proseguito manualmente. La matrice delle date non è stata inserita nel modello, in quanto, in qualsiasi modo venisse ricodificata, non migliorava in alcun modo la performance previsiva. Discorso analogo per tante altre variabili create, il cui impatto sul miglioramento previsivo era nullo.
+    
+  5. *Final Model*  
+      Lasso. Per la previsione, poiché più stabile, si è usata la media delle previsioni su ciascun fold di una K=5 folds cross validation.
+    
+  6. *Model tuning and evaluation*  
+      None
+    
+  7. *R packages*  
+      `MASS` `VIM` `ggplot2` `glmnet`
+
+```{r}
+
+rm(list=ls())
+library(MASS)
+library(VIM)
+library(ggplot2)
+library(glmnet)
+train_y_date<- read.table("C:/Users/Vinci/Desktop/DATA MINING/COMPETITIONS/NETFLIX/train_y_date.txt", quote="\"", comment.char="")
+train_y_rating<- read.table("C:/Users/Vinci/Desktop/DATA MINING/COMPETITIONS/NETFLIX/train_y_rating.txt", quote="\"", comment.char="")
+train_ratings_all<- read.delim("C:/Users/Vinci/Desktop/DATA MINING/COMPETITIONS/NETFLIX/train_ratings_all.txt", header=FALSE)
+train_dates_all<- read.delim("C:/Users/Vinci/Desktop/DATA MINING/COMPETITIONS/NETFLIX/train_dates_all.txt", header=FALSE)
+test_y_date<- read.table("C:/Users/Vinci/Desktop/DATA MINING/COMPETITIONS/NETFLIX/test_y_date.txt", quote="\"", comment.char="")
+test_ratings_all<- read.delim("C:/Users/Vinci/Desktop/DATA MINING/COMPETITIONS/NETFLIX/test_ratings_all.txt", header=FALSE)
+test_dates_all<- read.delim("C:/Users/Vinci/Desktop/DATA MINING/COMPETITIONS/NETFLIX/test_dates_all.txt", header=FALSE)
+movie_titles<- read.csv("C:/Users/Vinci/Desktop/DATA MINING/COMPETITIONS/NETFLIX/movie_titles.txt", header=FALSE)
+train_ratings_all[(train_ratings_all)==0]=NA
+test_ratings_all[(test_ratings_all)==0]=NA
+titoli=movie_titles[,2]
+names(train_y_rating)="y"
+names(train_y_date)="data_y"
+names(test_y_date)="data_y"
+n=dim(train_y_rating)[1]
+m=dim(test_y_date)[1]
+P=99
+impute <- function (a, a.impute){ 
+  ifelse (is.na(a), a.impute, a)
+}
+selezione.corr=function(y,x){
+  correlazione=NULL
+  x#nuova matrice di variabili.
+  dati=data.frame(y,x)
+  fit=lm(y~.,dati)
+  yhat=predict(fit,dati)
+  new.y=impute(y,yhat)
+  new.y
+}
+train_ratings_all[is.na(train_ratings_all)]=0
+test_ratings_all[is.na(test_ratings_all)]=0
+selezione.corr=function(y,x){
+  y[y==0]=NA
+  x[is.na(x)]=0
+  dati=data.frame(y,x)
+  fit=lm(y~.,dati)
+  yhat=predict(fit,dati)
+  new.y=impute(y,yhat)
+  new.y
+}
+train_ratings_all1=train_ratings_all
+for(i in 15:99){
+  train_ratings_all1[,i]=selezione.corr(train_ratings_all[,i],train_ratings_all[,-i])}
+test_ratings_all1=test_ratings_all
+for(i in 15:99){
+  test_ratings_all1[,i]=selezione.corr(test_ratings_all[,i],test_ratings_all[,-i])}
+train_ratings_all[(train_ratings_all)==0]=NA
+test_ratings_all[(test_ratings_all)==0]=NA
+#a) vedo la media dei film:
+media.movies=apply(train_ratings_all,2,function(x) mean(x,na.rm=T))
+train_ratings_all[is.na(train_ratings_all)]=0
+test_ratings_all[is.na(test_ratings_all)]=0
+PMISS=function(x) {sum(x==0)/length(x)*100}
+p.miss.ratings.tr=apply(train_ratings_all,2,PMISS)
+p.miss.ratings.te=apply(test_ratings_all,2,PMISS)
+combi=rbind(train_ratings_all,test_ratings_all)
+combi1=rbind(train_ratings_all1,test_ratings_all1)
+dummy_missing_combi=NULL
+for(i in 1:nrow(combi)){
+  dummy_missing_combi[i]=ifelse(combi[i,24]==0 && combi[i,37]==0 && combi[i,98],1,0)}
+dummy_missing_combi.tr=dummy_missing_combi[1:n]
+dummy_missing_combi.ts=dummy_missing_combi[(n+1):(n+m)]
+
+#-creo una nuova variabile che è il numero dei voti che ha messo a ciascun film
+dummy_bassi_combi=NULL
+for(i in 1:nrow(combi)){
+  dummy_bassi_combi[i]=ifelse(combi[i,24]==1 && combi[i,37]==1 && combi[i,98]==1,1,0)}
+dummy_1_bassi.tr=dummy_bassi_combi[1:n]
+dummy_1_bassi.ts=dummy_bassi_combi[(n+1):(n+m)]
+num_voti_combi.bassi=NULL
+for( i in 1:nrow(combi)){
+  num_voti_combi.bassi[i]=length(which(combi[i,c(24,37,98)]!=0))
+}
+num_voti_bassi.tr=num_voti_combi.bassi[1:n]
+num_voti_bassi.ts=num_voti_combi.bassi[(n+1):(n+m)]
+combi[combi==0]=NA
+media_voti_combi.bassi=apply(combi1[,c(24,37,98)],1,function(x) mean(x,na.rm=T))
+media_voti_combi.bassi[is.na(media_voti_combi.bassi)]=0
+media_voti_bassi.tr=media_voti_combi.bassi[1:n]
+media_voti_bassi.ts=media_voti_combi.bassi[(n+1):(n+m)]
+num_voti.bassi.min3=NULL
+for( i in 1:nrow(combi)){
+  num_voti.bassi.min3[i]=length(which(combi[i,c(24,37,98)]!=0 & combi[i,c(24,37,98)]<3))
+}
+num_voti.bassi.min3.tr=num_voti.bassi.min3[1:n]
+num_voti.bassi.min3.ts=num_voti.bassi.min3[(n+1):(n+m)]
+combi[is.na(combi)]=0
+combi[combi==0]=NA
+media_users.tr=apply(combi[1:n,],1,function(x) mean(x,na.rm=T))
+media_users.ts=apply(combi[(n+1):(n+m),],1,function(x) mean(x,na.rm=T))
+sd_users.tr=apply(combi[1:n,],1,function(x) sd(x,na.rm=T))
+sd_users.ts=apply(combi[(n+1):(n+m),],1,function(x) sd(x,na.rm=T))
+combi[is.na(combi)]=0
+combi.count.users=NULL 
+for( i in 1:(n+m)){
+  contatore=0
+  for(j in 1:P){
+    if(combi[i,j]!=0){contatore=contatore+1}
+  }
+  combi.count.users[i]=contatore
+}
+train.count.users=combi.count.users[1:n]
+test.count.users=combi.count.users[(n+1):(n+m)]
+dummy_matrix_combi=combi[,15:99]
+for(j in 1:ncol(dummy_matrix_combi)){
+  for( i in 1:nrow(dummy_matrix_combi)){
+    dummy_matrix_combi[i,j]=ifelse(combi[i,j]==0,1,0)
+  }
+}
+dummy_matrix_train=dummy_matrix_combi[1:n,]
+dummy_matrix_test=dummy_matrix_combi[(n+1):(n+m),]
+min.users.train=apply(combi1[1:n,],1,function(x) min(x,na.rm=T))
+min.users.test=apply(combi1[(n+1):(n+m),],1,function(x) min(x,na.rm=T))
+max.users.train=apply(combi[1:n,],1,function(x) max(x,na.rm=T))
+max.users.test=apply(combi[(n+1):(n+m),],1,function(x) max(x,na.rm=T))
+combi[is.na(combi)]=0
+combi.date=rbind(train_dates_all,test_dates_all)
+combi.film.unici.votati=NULL
+for(i in 1:nrow(combi.date)){
+  combi.film.unici.votati[i]=length(table(t(combi.date[i,])))
+  
+}
+train.film.unici.votati=combi.film.unici.votati[1:n] 
+test.film.unici.votati=combi.film.unici.votati[(n+1):(n+m)] 
+matrix.count.date.for.user=combi.date
+for(i in 1:(n+m)){
+  uu=table(as.matrix(combi.date[i,]))
+  for(j in 1:P){
+    if(matrix.count.date.for.user[i,j] %in% names(uu)){
+      matrix.count.date.for.user[i,j]=as.numeric(uu[names(uu)==matrix.count.date.for.user[i,j]])
+    }
+    
+  }
+}
+matrix.count.date.for.user.train=matrix.count.date.for.user[1:n,]
+matrix.count.date.for.user.test=matrix.count.date.for.user[(n+1):(n+m),]
+max.date.combi=NULL
+for(i in 1:nrow(combi.date)){
+  t=table(as.matrix(combi.date[i,]))
+  max.date.combi[i]=max(t)
+}
+max.date.train=max.date.combi[(1:n)]
+max.date.test=max.date.combi[(n+1):(n+m)]
+dummy1.matrix=matrix.count.date.for.user
+for( i in 1:nrow(matrix.count.date.for.user)){
+  aa=matrix.count.date.for.user[i,]
+  dummy1.matrix[i,which(aa==1)]=1
+  dummy1.matrix[i,which(aa!=1)]=0
+  
+}
+num.voti.singolo_film.tr=apply(dummy1.matrix[1:n,],1,function(x) sum(x,na.rm=T))
+num.voti.singolo_film.ts=apply(dummy1.matrix[(n+1):(n+m),],1,function(x) sum(x,na.rm=T))
+combi.date[combi.date==0]=NA
+min.data.combi=apply(combi.date,1,function(x) min(x,na.rm = TRUE))
+y_date=rbind(train_y_date,test_y_date)[,1]
+combi.diff.min.commento.da.MC=y_date-min.data.combi
+train.diff.min.commento.da.MC=combi.diff.min.commento.da.MC[1:n]
+test.diff.min.commento.da.MC=combi.diff.min.commento.da.MC[(n+1):(n+m)]
+combi.date[is.na(combi.date)]=NA
+combi.date[(combi.date)==0]=NA
+matrix.dist.date.commento=combi.date
+for(j in 1:P){
+  for( i in 1:nrow(combi.date)){
+    matrix.dist.date.commento[i,j]=abs(combi.date[i,j]-y_date[i])
+  }}
+matrix.dist.date.commento[is.na(matrix.dist.date.commento)]=0
+matrix.dist.date.commento.tr=matrix.dist.date.commento[1:n,]
+matrix.dist.date.commento.ts=matrix.dist.date.commento[(n+1):(n+m),]
+combi.date[is.na(combi.date)]=0
+num_voti_day_mc=NULL
+for( i in 1:(n+m)){
+  num_voti_day_mc[i]=length(as.numeric(combi.date[i,which(combi.date[i,]==y_date[i])]))
+  
+}
+num_voti_day_mc.tr=num_voti_day_mc[1:n]
+num_voti_day_mc.ts=num_voti_day_mc[(n+1):(n+m)]
+voto1=NULL
+for(i in 1:(n+m)){
+  contatore=0
+  for(j in 1:P){
+    if(y_date[i]==combi.date[i,j] & combi[i,j]==1){
+      contatore=contatore+1
+    }
+  }
+  voto1[i]=contatore
+}
+voto1.tr=voto1[1:n]
+voto1.ts=voto1[(n+1):(n+m)]
+media_voti_day_mc=NULL
+for(i in 1:(n+m)){
+  media_voti_day_mc[i]=mean(as.numeric(combi[i,which(combi.date[i,]==y_date[i])]),na.rm = T)
+}
+media_voti_day_mc[which(num_voti_day_mc==0)]=0
+media_voti_day_mc.tr=media_voti_day_mc[1:n]
+media_voti_day_mc.ts=media_voti_day_mc[(n+1):(n+m)]
+sd_voti_day_mc=NULL
+for(i in 1:(n+m)){
+  sd_voti_day_mc[i]=sd(as.numeric(combi[i,which(combi.date[i,]==y_date[i])]),na.rm = T)
+}
+sd_voti_day_mc[which(is.na(sd_voti_day_mc))]=0
+sd_voti_day_mc.tr=sd_voti_day_mc[1:n]
+sd_voti_day_mc.ts=sd_voti_day_mc[(n+1):(n+m)]
+sdi=NULL
+for(i in 1:(n+m)){
+  sdi[i]=ifelse(media_voti_day_mc[i]!=0 & sd_voti_day_mc[i]!=0,media_voti_day_mc[i]/sd_voti_day_mc[i],0)
+}
+sdi.tr=sdi[1:n]
+sdi.ts=sdi[(n+1):(n+m)]
+d.matrix.same.day=matrix(rep(0,(m+n)*P),nrow=n+m,ncol=P)
+d.matrix.same.day=data.frame(d.matrix.same.day)
+#creo la stessa matrice ma con tutti 0
+for( i in 1:(n+m)){
+  d.matrix.same.day[i,which(combi.date[i,]==y_date[i])]=1
+}
+matrice.pesi.day=combi1
+for(i in 1:nrow(matrice.pesi.day)){
+  for(j in 1:ncol(matrice.pesi.day)){
+    matrice.pesi.day[i,j]=combi1[i,j]*d.matrix.same.day[i,j]
+  }
+}
+matrice.pesi.day.tr=matrice.pesi.day[1:n,]
+matrice.pesi.day.ts=matrice.pesi.day[(n+1):(n+m),]
+dummy_same_day_good=NULL
+for( i in 1:(n)){
+  dummy_same_day_good[i]=ifelse(media_voti_day_mc.tr[i]>media_users.tr[i],1,0)
+  
+}
+dummy_same_day_good.ts=NULL
+for( i in 1:(m)){
+  dummy_same_day_good.ts[i]=ifelse(media_voti_day_mc.ts[i]>media_users.ts[i],1,0)
+  
+}
+combi[combi==0]=NA
+d.matrix.same.month=matrix(rep(0,(n+m)*P),nrow=(n+m),ncol=P)
+d.matrix.same.month=data.frame(d.matrix.same.month)
+for( i in 1:(n+m)){
+  d.matrix.same.month[i,which(combi.date[i,]<=y_date[i] & combi.date[i,]>=(y_date[i]-31))]=1
+}
+matrice.pesi.month=combi
+for(i in 1:nrow(matrice.pesi.month)){
+  for(j in 1:ncol(matrice.pesi.month)){
+    matrice.pesi.month[i,j]=combi[i,j]*d.matrix.same.month[i,j]
+  }
+}
+matrice.pesi.month.tr=matrice.pesi.month[1:n,]
+matrice.pesi.month.ts=matrice.pesi.month[(n+1):(n+m),]
+train_ratings_all[train_ratings_all==0]=NA
+
+train_ratings_all[is.na(train_ratings_all)]=0
+
+test_ratings_all[is.na(test_ratings_all)]=0
+voto2=NULL
+for(i in 1:(n+m)){
+  contatore=0
+  for(j in 1:P){
+    if(y_date[i]==combi.date[i,j] & combi[i,j]==2){
+      contatore=contatore+1
+    }
+  }
+  voto2[i]=contatore
+}
+voto2.tr=voto1[1:n]
+voto2.ts=voto1[(n+1):(n+m)]
+traaaaaaain=data.frame(y=train_y_rating[,1],train_ratings_all1,dummy_missing_combi.tr,dummy_1_bassi.tr,media_voti_bassi.tr,num_voti.bassi.min3.tr,
+                       media_users.tr,sd_users.tr,train.count.users,dummy_matrix_train,min.users.train,max.users.train,
+                       train.film.unici.votati,num.voti.singolo_film.tr,train.diff.min.commento.da.MC,max.date.train,matrix.dist.date.commento.tr,
+                       num_voti_day_mc.tr,media_voti_day_mc.tr ,voto1.tr,sd_voti_day_mc.tr,sdi.tr,matrice.pesi.day.tr,voto2.tr,matrice.pesi.month.tr,
+                       dummy_same_day_good
+)
+traaaaaaain[is.na(traaaaaaain)]=0
+teest=data.frame(test_ratings_all1,dummy_missing_combi.ts,dummy_1_bassi.ts,media_voti_bassi.ts,num_voti.bassi.min3.ts,
+                 media_users.ts,sd_users.ts,test.count.users,dummy_matrix_test,min.users.test,max.users.test,
+                 test.film.unici.votati,num.voti.singolo_film.ts,test.diff.min.commento.da.MC,max.date.test,matrix.dist.date.commento.ts,
+                 num_voti_day_mc.ts,voto1.ts,media_voti_day_mc.ts,sd_voti_day_mc.ts,sdi.ts,matrice.pesi.day.ts,voto2.ts,matrice.pesi.month.ts,
+                 dummy_same_day_good.ts)
+teest[is.na(teest)]=0
+#PREVISIONE.
+set.seed(123)
+X=as.matrix(traaaaaaain[,-1])
+X.star=as.matrix(teest)
+y=as.matrix(traaaaaaain[,1])
+K=5
+folds <- sample( rep(1:K,length=n) )
+yhat.matrix=matrix(0,nrow=m,ncol=5)
+set.seed(123   )
+for (k in 1:K){
+  out = which(folds==k)
+  fit.lasso <- glmnet(X[-out,], (y[-out]), alpha=1)
+  lasso.cv<-cv.glmnet(X[-out,],(y[-out]),alpha=1, nfolds = K, grouped=FALSE) #faccio la cross validazione prendendo il lambda minimo. 
+  hatlambda<-lasso.cv$lambda.min ;hatlambda #valore ottimale di lambda.
+  yhat.lasso= predict(fit.lasso, s=hatlambda, newx=X.star, exact=TRUE)
+  for(i in 1:length(yhat.lasso)){
+    if(yhat.lasso[i]>5){yhat.lasso[i]=5}
+    if(yhat.lasso[i]<1){yhat.lasso[i]=1}
+  }
+  yhat.matrix[,k]=yhat.lasso
+} 
+
+yhat.lasso=apply(yhat.matrix,1,mean)
+head(yhat.lasso)
+```
+
