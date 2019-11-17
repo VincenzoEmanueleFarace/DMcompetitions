@@ -1,0 +1,314 @@
+---
+title: "Online Dating - OKcupid"
+author: "Double Name"
+date: "17/11/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+TEAM NAME: Double_Name  
+TEAM MEMBERS: Viganò Lorenzo Daniele (l.viganò), Farace Vincenzo Emanuele (v.farace), Silva Alessandro (a.silva)  
+
+
+### Online Dating - OKcupid
+
+L'obiettivo consiste nel prevedere se la professione di un utente di OKcupid appartenga al settore STEM 
+(science, technology, engineering, and math).
+
+Il dataset contiene 10000 osservazioni, 108 variabili esplicative e una variabile risposta. In particolare:
+- il training set include n = 6000 osservazioni, di cui 1095 sono STEM (class imbalance: 18,25% of users are STEM);
+- il test set include m = 4000 osservazioni da classificare;
+- i predittori appartengono a diverse classi (1 numeric, 3 integers, 17 factors, 87 dummies);
+- la risposta appartiene alla classe factor, pertanto si tratta di un problema di classificazione;
+
+
+*Summary of the modelling process:*  
+  
+  1. *Preprocessing*  
+        Studio della distribuzione delle variabili factor, numeric ed integer, con lo scopo di identificare relazioni con la variabile risposta.
+    
+  2. *Missing Values*  
+        I missing values sono presenti soltanto in alcune delle variabili factor, codificati come un livello della variabile categoriale ("missing_namevariable"). 
+        Al fine di semplificare l'analisi esplorativa, all'inizio si è optato di trasformare il livello dei missing values delle variabili fattoriali in missing values (NA), per poi ricodificarli come livello. 
+        Inoltre, si è deciso di imputare i valori della variabile "income" con il predittore "age", dal momento che l'età consiste in una varibile plausibile e logica per spiegare il reddito di una persona.
+ 
+  3. *Outliers*    
+        Si è deciso di trattare gli outliers realtivi alle variabili age and height, in quanto contenevano valori non realistici in termini di età e di altezza.
+  
+  4. *Feature engineering*  
+      Con lo scopo di migliorare la previsione, si è pensato di fondere alcuni livelli inutili della variabile diet, in quanto dal punto di vista logico non vi era differenza ("mostly_other","other","strictly_other" e "mostly_anything","anything","strictly_anything") e di trasformare la classe di due variabili, ovvero convertire la variabile income fa factor a numeric e la variabile essay_length da numeric a factor.
+      Successivamente si sono create due nuovi predittori attraverso alcune variabili dummy presenti nel dataset, ovvero:
+      *ethnicity*, con l'obiettivo di evidenziare l'etnia di un individuo (asian, middle eastern, black, native american, indian, pacific islander, hispanic/latin, white, other);
+      *cpp_lisp*, con l'obiettivo di evidenziare la conoscenza di almeno uno dei due linguaggi di programmazione tra c++ e lisp (cpp cpp_fluently cpp_okay cpp_poorly e lisp lisp_fluently lisp_okay lisp_poorly);
+      Dal momento che, per quanto concerne la variabile ethnicity, erano presenti molti utenti che possedevano più di un'etnia, si è deciso di considerare soltanto l'etnia degli utenti che hanno risposto con un solo tipo di gruppo etnico, codificando come missing values tutti gli altri con zero o multiple etnie, in quanto non realmente possibile.
+    
+  5. *Feature selection*  
+      Per selezionare le variabili, si è optato per l'utilizzo della funzione "nearZeroVar" presente nel pacchetto "caret", tuttavia, visto che molte delle variabili a varianza quasi nulla erano dummy relative a parole presenti o assenti nei temi redatti dagli utenti per descrivere se stessi, si deciso di eliminare solo le variabili categoriali con varianza quasi nulla.
+      Tali variabili sono "status" e "Where_state": dal punto di vista logico, una persona iscritta ad un sito di incontri di San Francisco probabilmente è single e difficilmente abita fuori dallo stato della California.
+      
+  6. *Final Model*  
+      Gradient Boosting
+    
+  7. *Model tuning and evaluation*  
+      AUC (Area Under Curve) è una buona misura per i problemi di classificazione binaria.
+    
+  8. *R packages*  
+      `caret` `tibble` `forcats`
+      
+```{r OKcupid}
+rm(list = ls()) 
+
+# import data
+train <- read.csv("http://bee-fore.s3-eu-west-1.amazonaws.com/datasets/112.csv")
+test <- read.csv("http://bee-fore.s3-eu-west-1.amazonaws.com/datasets/113.csv")
+
+
+# get the required R packages
+library(caret)
+library(tibble)
+library(forcats)
+
+test$Class = NA
+
+n = nrow(train)
+m = nrow(test)
+
+
+# combine train and test data for preprocessing
+comb = rbind(train,test)
+train = comb[1:n,]
+test = comb[(n+1):(n+m),]
+
+
+# impute extreme outliers of integer predictors (age and height)
+comb$age[which(comb$age == 109)] = round(mean(comb$age[which(comb$body_type == "athletic")]),0)
+
+for(i in 1:nrow(comb)){
+  if(comb$height[i]<53){
+    comb$height[i]=53
+  } 
+  if(comb$height[i]>88){
+    comb$height[i]=88
+  } 
+}
+comb$height = as.integer(comb$height)
+
+
+# transform income predictor from factor to numeric, after converting "missing" level to NA
+comb$income[comb$income == "missing"] = NA
+comb$income = factor(comb$income)
+
+for(i in 1:length(levels(comb$income))){
+  levels(comb$income)[i]=substring(text=levels(comb$income)[i], first = 4)
+}
+
+comb$income=as.character(comb$income)
+comb$income=as.numeric(comb$income)
+
+
+# transform essay_length predictor from numeric to factor
+for(i in 1:nrow(comb)){comb$essay_length[i] = round(x = comb$essay_length[i], digits = 0)}
+comb$essay_length = as.factor(comb$essay_length)
+
+
+# collapse useless levels for diet predictor, after converting "missing" level to NA
+comb$diet[comb$diet == "diet_missing"] = NA
+comb$diet = factor(comb$diet)
+
+library(forcats)
+comb$diet=fct_collapse(comb$diet, "other" = c("mostly_other","other","strictly_other"))
+comb$diet=fct_collapse(comb$diet, "anything" = c("mostly_anything","anything","strictly_anything"))
+
+# convert "missing" level to NA for other factor variables
+comb$body_type[comb$body_type == "bodytype_missing"] = NA
+comb$body_type <- factor(comb$body_type)
+
+comb$drinks[comb$drinks == "drinks_missing"] = NA
+comb$drinks = factor(comb$drinks)
+
+comb$drugs[comb$drugs == "drugs_missing"] = NA
+comb$drugs = factor(comb$drugs)
+
+comb$education[comb$education == "ed_missing"] = NA
+comb$education = factor(comb$education)
+
+comb$offspring[comb$offspring == "kids_missing"] = NA
+comb$offspring = factor(comb$offspring)
+
+comb$pets[comb$pets == "pets_missing"] = NA
+comb$pets = factor(comb$pets)
+
+comb$religion[comb$religion == "religion_missing"] = NA
+comb$religion = factor(comb$religion)
+
+comb$religion_modifer[comb$religion_modifer == "religion_mod_missing"] = NA
+comb$religion_modifer = factor(comb$religion_modifer)
+
+comb$sign[comb$sign == "sign_missing"] = NA
+comb$sign = factor(comb$sign)
+
+comb$sign_modifer[comb$sign_modifer == "sign_mod_missing"] = NA
+comb$sign_modifer = factor(comb$sign_modifer)
+
+comb$smokes[comb$smokes == "smokes_missing"] = NA
+comb$smokes = factor(comb$smokes)
+
+comb$status[comb$status == "unknown"] = NA
+comb$status = factor(comb$status)
+
+
+# feature engineering (ethnicity and cpp_lisp)
+
+# ethnicity
+ethnic_group = data.frame(white=comb$white, black=comb$black, 
+                          asian=comb$asian, indian=comb$indian,
+                          hispanic_latin=comb$hispanic_latin,
+                          native_american=comb$native_american, 
+                          pacific_islander=comb$pacific_islander, 
+                          middle_eastern=comb$middle_eastern, 
+                          other=comb$other)
+
+ethnic_sum = apply(ethnic_group, MARGIN = 1, FUN = sum)
+
+missing_values = NULL
+for(i in 1:nrow(ethnic_group)){
+  if(ethnic_sum[i] != 1){
+    missing_values[i] = NA
+  } else {
+    missing_values[i] = ""
+  }
+}
+ethnic_group$missing_values = missing_values
+
+ethnicity = as.factor(
+  apply(ethnic_group,1,function(x){
+    paste(x,sep="",collapse="")}))
+
+for(i in 1:length(ethnicity)){
+  if(substring(ethnicity[i], 10) == "NA"){
+    ethnicity[i] = NA
+  }
+}
+
+levels(ethnicity) <- list("white"="100000000",
+                          "black"="010000000",
+                          "native_american"="001000000",
+                          "pacific_islander"="000100000",
+                          "middle_eastern"="000010000",
+                          "asian"="000001000",
+                          "indian"="000000100",
+                          "hispanic_latin"="000000010",
+                          "other"="000000001")
+
+comb$ethnicity = ethnicity
+var_comb = setdiff(names(comb), names(ethnic_group))
+
+comb = comb[,var_comb]
+train = comb[1:n,]
+test = comb[(n+1):(n+m),]
+
+
+# cpp_lisp
+cpp = data.frame(cpp=comb$cpp, cpp_fluently=comb$cpp_fluently, cpp_okay=comb$cpp_okay, cpp_poorly=comb$cpp_poorly)
+cpp_sum = apply(cpp, MARGIN = 1, FUN = sum) 
+
+lisp = data.frame(lisp=comb$lisp, lisp_fluently=comb$lisp_fluently, lisp_okay=comb$lisp_okay, lisp_poorly=comb$lisp_poorly)
+lisp_sum = apply(lisp, MARGIN = 1, FUN = sum)
+
+cpp_lisp = NULL
+for(i in 1:nrow(comb)){
+  if(cpp_sum[i] == 1 & lisp_sum[i] == 1){
+    cpp_lisp[i] = 3
+  } else if(cpp_sum[i] == 1 & lisp_sum[i] == 0){
+    cpp_lisp[i] = 2
+  } else if(cpp_sum[i] == 0 & lisp_sum[i] == 1){
+    cpp_lisp[i] = 1
+  } else{
+    cpp_lisp[i] = 0
+  }
+}
+cpp_lisp = as.factor(cpp_lisp)
+levels(cpp_lisp) <- list("cpp_lisp"="3", "cpp"="2", "lisp"="1", "_"="0")
+
+comb$cpp_lisp = cpp_lisp
+var_comb = names(comb)
+comb = comb[,var_comb]
+train = comb[1:n,]
+test = comb[(n+1):(n+m),]
+
+
+# use caret to drop near zero-variance predictors (status and where_state)
+# (OKcupid is for single and San Francisco is in California)
+vars_zv = nearZeroVar(train, freqCut = 95/5, uniqueCut = 10)
+
+comb = comb[,-which(names(comb) %in% c("status", "where_state"))]
+train = comb[1:n,]
+test = comb[(n+1):(n+m),]
+
+
+# convert NA to "missing" level for factor variables
+vars <- setdiff(names(comb),"Class")
+vars_cat <- vars[sapply(train[,vars],class) %in% c('factor','logical')]
+
+vars_fact = comb[,vars_cat]
+for(j in 1:ncol(vars_fact)){
+  if(is.factor(vars_fact[,j])){
+    levels(vars_fact[,j]) <- c(levels(vars_fact[,j]),"missing")
+  }
+}
+vars_fact[is.na(vars_fact)] <- "missing"
+
+var_comb = setdiff(names(comb), names(vars_fact))
+comb = comb[,var_comb]
+comb = data.frame(comb, vars_fact)
+
+
+# impute income predictor by age
+impute <- function (a, a.impute){ifelse (is.na(a), a.impute, a)}
+prevision = function(y,x){
+  dati=data.frame(y,x)
+  fit=lm(y~x,dati)
+  yhat=predict(fit,dati)
+  new.y=impute(y,yhat)
+}
+revenue = prevision(comb$income, comb$age)
+
+comb = add_column(.data = comb, revenue, .after = "income" )
+comb = comb[,-which(names(comb) %in% "income")]
+
+
+# create data for training and test
+train = comb[1:n,]
+test = comb[(n+1):(n+m),]
+
+
+# train model with caret
+ctrl <- trainControl(method = "repeatedcv",
+                     repeats = 3,
+                     number = 6,
+                     classProbs = TRUE,
+                     summaryFunction = twoClassSummary,
+                     sampling = "down")
+
+
+set.seed(123) # for reproducibility
+
+fit <- train(Class ~ .,
+             data = train,
+             method = "gbm",
+             verbose = FALSE,
+             metric = "ROC",
+             trControl = ctrl)
+
+# compute predictions
+phat = predict(fit, newdata=test, type="prob")[,"stem",drop=F]
+
+# show first 6 predicted values
+head(phat)
+
+```
+
+
